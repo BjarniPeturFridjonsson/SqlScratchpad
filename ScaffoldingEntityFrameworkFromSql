@@ -2,9 +2,6 @@ create procedure GenerateDtoClass
     @TableName nvarchar(128)
 as 
 begin
-
-
-
 	declare 
 		@DtoClass nvarchar(max),
 		@ColumnName nvarchar(255),
@@ -87,11 +84,9 @@ begin
 
     close @Columns
     deallocate @Columns
+	set @DtoClass = @DtoClass + '}' + char(13) + char(10) + char(13) + char(10)
 
-    -- Close the class definition
-    set @DtoClass = @DtoClass + '}' + char(13) + char(10) + char(13) + char(10)
 
-    -- Add DbContext and OnModelCreating method
     set @DtoClass = @DtoClass + '******************* DbContext file' + char(13) + char(10)
     set @DtoClass = @DtoClass + char(13) + char(10)
     set @DtoClass = @DtoClass + '    public DbSet<' + @TableName + 'Dto> ' + @TableName + ' { get; set; }' + char(13) + char(10)
@@ -106,9 +101,6 @@ begin
     begin
         set @DtoClass = @DtoClass + '        modelBuilder.Entity<' + @TableName + 'Dto>().HasKey(e => e.' + @PrimaryKeyColumn + ');' + char(13) + char(10)
     end
-    
 
-    -- Print the generated DTO class and DbContext
     print @DtoClass;
-
 end
