@@ -1,0 +1,114 @@
+create procedure GenerateDtoClass
+    @TableName nvarchar(128)
+as 
+begin
+
+
+
+	declare 
+		@DtoClass nvarchar(max),
+		@ColumnName nvarchar(255),
+		@ColumnType nvarchar(255),
+		@MaxLength int,
+		@CSharpType nvarchar(255),
+		@IsPrimaryKey bit,
+		@PrimaryKeyColumn nvarchar(255),
+		@DtoPostFix nvarchar(50),
+		@Columns cursor
+
+	-- internal 
+	set @DtoPostFix = ''; --Entity / Dto
+
+    set @DtoClass = 'using System;' + char(13) + char(10)
+	set @DtoClass = @DtoClass + 'public class ' + @TableName + @DtoPostFix + char(13) + char(10) + '{' + char(13) + char(10)
+
+    -- Open a cursor to iterate through the columns of the table
+    set @Columns = cursor for
+    select COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, 
+           case when COLUMN_NAME IN (
+               select COLUMN_NAME 
+               from INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+               where TABLE_NAME = @TableName AND OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + CONSTRAINT_NAME), 'IsPrimaryKey') = 1
+           ) then 1 else 0 end as IsPrimaryKey
+    from INFORMATION_SCHEMA.COLUMNS
+    where TABLE_NAME = @TableName
+
+    open @Columns
+    fetch next from @Columns into 
+		@ColumnName, @ColumnType, @MaxLength, @IsPrimaryKey
+
+    while @@FETCH_STATUS = 0
+    begin
+        -- Map SQL data types to C# data types
+        set @CSharpType = case  @ColumnType
+            when 'int' then 'int'
+            when 'bigint' then 'long'
+            when 'smallint' then 'short' -- bool
+            when 'tinyint' then 'byte'
+            when 'bit' then 'bool'
+            when 'decimal' then 'decimal'
+            when 'numeric' then 'decimal'
+            when 'float' then 'double'
+            when 'real' then 'float'
+            when 'money' then 'decimal'
+            when 'smallmoney' then 'decimal'
+            when 'datetime' then 'DateTime'
+            when 'smalldatetime' then 'DateTime'
+            when 'date' then 'DateTime'
+            when 'time' then 'TimeSpan'
+            when 'char' then 'string'
+            when 'varchar' then 'string'
+            when 'text' then 'string'
+            when 'nchar' then 'string'
+            when 'nvarchar' then 'string'
+            when 'ntext' then 'string'
+            when 'uniqueidentifier' then 'Guid'
+            else 'object'
+        end
+
+        
+        if @IsPrimaryKey = 1
+        begin
+            set @PrimaryKeyColumn = @ColumnName
+			-- if your rather want the model to have the primary key definition
+			--set @DtoClass = @DtoClass + '    [Key]' + char(13) + char(10)
+        end
+		 -- Handle max len
+        if @ColumnType IN ('char', 'varchar', 'text', 'nchar', 'nvarchar', 'ntext') and @MaxLength > 0
+        begin
+            set @DtoClass = @DtoClass + '    [MaxLength(' + CAST(@MaxLength as nvarchar(10)) + ')]' + char(13) + char(10)
+        end
+
+        set @DtoClass = @DtoClass + '    public ' + @CSharpType + ' ' + @ColumnName + ' { get; set; }' + char(13) + char(10)
+
+        fetch next from @Columns into 
+			@ColumnName, @ColumnType, @MaxLength, @IsPrimaryKey
+    end
+
+    close @Columns
+    deallocate @Columns
+
+    -- Close the class definition
+    set @DtoClass = @DtoClass + '}' + char(13) + char(10) + char(13) + char(10)
+
+    -- Add DbContext and OnModelCreating method
+    set @DtoClass = @DtoClass + '******************* DbContext file' + char(13) + char(10)
+    set @DtoClass = @DtoClass + char(13) + char(10)
+    set @DtoClass = @DtoClass + '    public DbSet<' + @TableName + 'Dto> ' + @TableName + ' { get; set; }' + char(13) + char(10)
+    set @DtoClass = @DtoClass + char(13) + char(10)
+    
+    set @DtoClass = @DtoClass + char(13) + char(10)
+    set @DtoClass = @DtoClass + '******************* OnModelCreating method' + char(13) + char(10)
+    set @DtoClass = @DtoClass + char(13) + char(10)
+    set @DtoClass = @DtoClass + '        modelBuilder.Entity<' + @TableName + 'Dto>().ToTable("' + @TableName + '");' + char(13) + char(10)
+    
+	if @PrimaryKeyColumn is not null
+    begin
+        set @DtoClass = @DtoClass + '        modelBuilder.Entity<' + @TableName + 'Dto>().HasKey(e => e.' + @PrimaryKeyColumn + ');' + char(13) + char(10)
+    end
+    
+
+    -- Print the generated DTO class and DbContext
+    print @DtoClass;
+
+end
